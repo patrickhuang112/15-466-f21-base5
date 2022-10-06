@@ -15,13 +15,13 @@
 
 GLuint phonebank_meshes_for_lit_color_texture_program = 0;
 Load< MeshBuffer > phonebank_meshes(LoadTagDefault, []() -> MeshBuffer const * {
-	MeshBuffer const *ret = new MeshBuffer(data_path("phone-bank.pnct"));
+	MeshBuffer const *ret = new MeshBuffer(data_path("airshot.pnct"));
 	phonebank_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
 	return ret;
 });
 
 Load< Scene > phonebank_scene(LoadTagDefault, []() -> Scene const * {
-	return new Scene(data_path("phone-bank.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
+	return new Scene(data_path("airshot.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
 		Mesh const &mesh = phonebank_meshes->lookup(mesh_name);
 
 		scene.drawables.emplace_back(transform);
@@ -39,7 +39,7 @@ Load< Scene > phonebank_scene(LoadTagDefault, []() -> Scene const * {
 
 WalkMesh const *walkmesh = nullptr;
 Load< WalkMeshes > phonebank_walkmeshes(LoadTagDefault, []() -> WalkMeshes const * {
-	WalkMeshes *ret = new WalkMeshes(data_path("phone-bank.w"));
+	WalkMeshes *ret = new WalkMeshes(data_path("airshot.w"));
 	walkmesh = &ret->lookup("WalkMesh");
 	return ret;
 });
@@ -59,6 +59,7 @@ PlayMode::PlayMode() : scene(*phonebank_scene) {
 
 	//player's eyes are 1.8 units above the ground:
 	player.camera->transform->position = glm::vec3(0.0f, 0.0f, 1.8f);
+	player.transform->position.z = 1.8f;
 
 	//rotate camera facing direction (-z) to player facing direction (+y):
 	player.camera->transform->rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -66,18 +67,22 @@ PlayMode::PlayMode() : scene(*phonebank_scene) {
 	//start player walking at nearest walk point:
 	player.at = walkmesh->nearest_walk_point(player.transform->position);
 
+	SDL_SetRelativeMouseMode(SDL_TRUE);
+
+	game = new Game::Game(0.f, 0.f, 0.f, 0.f, scene);
 }
 
 PlayMode::~PlayMode() {
+	delete game;
+
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
-
+	if (game->game_over) {
+		return false;	
+	}
 	if (evt.type == SDL_KEYDOWN) {
-		if (evt.key.keysym.sym == SDLK_ESCAPE) {
-			SDL_SetRelativeMouseMode(SDL_FALSE);
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_a) {
+		if (evt.key.keysym.sym == SDLK_a) {
 			left.downs += 1;
 			left.pressed = true;
 			return true;
@@ -108,9 +113,13 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			down.pressed = false;
 			return true;
 		}
-	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
-		if (SDL_GetRelativeMouseMode() == SDL_FALSE) {
-			SDL_SetRelativeMouseMode(SDL_TRUE);
+	} else if (evt.type == SDL_MOUSEBUTTONUP) {
+		if (shoot_elapsed > Game::RELOAD_SPEED) {
+			float pitch = glm::pitch(player.camera->transform->rotation);
+			float proll = glm::roll(player.transform->rotation);	
+			glm::vec3 truepos = player.transform->position;
+			game->shoot(truepos, pitch, proll);		
+			shoot_elapsed = 0.f;
 			return true;
 		}
 	} else if (evt.type == SDL_MOUSEMOTION) {
@@ -123,12 +132,29 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			player.transform->rotation = glm::angleAxis(-motion.x * player.camera->fovy, up) * player.transform->rotation;
 
 			float pitch = glm::pitch(player.camera->transform->rotation);
+			/*
+			float yaw = glm::yaw(player.transform->rotation);
+			float ppitch = glm::pitch(player.transform->rotation);
+			float proll = glm::roll(player.transform->rotation);
+			*/
 			pitch += motion.y * player.camera->fovy;
 			//camera looks down -z (basically at the player's feet) when pitch is at zero.
 			pitch = std::min(pitch, 0.95f * 3.1415926f);
 			pitch = std::max(pitch, 0.05f * 3.1415926f);
 			player.camera->transform->rotation = glm::angleAxis(pitch, glm::vec3(1.0f, 0.0f, 0.0f));
-
+			/*
+			glm::quat& q = player.camera->transform->rotation;
+			glm::quat& q2 = player.transform->rotation;
+			glm::vec3& v = player.transform->position;
+			*/
+			// W/z for up and down motion of camera
+			// Use pitch for up and down motion, where itts between 0 and pi (full down vs full up)
+			// printf("pitch + WXYZ: %f %f %f %f %f\n", pitch, q.x, q.y, q.z, q.w);
+			// printf("yaw, ppitch, proll: %f %f %f\n", yaw, ppitch, proll);
+			// YandZ for  on rotation for left right of camera
+			//printf("person: %f %f %f %f\n", q2.x, q2.y, q2.z, q2.w);
+			//printf("relation: %f %f %f %f\n", q2.z * q2.z, q2.w * q2.w, glm::cos(proll), glm::sin(proll));
+			//printf("Pos: %f %f %f\n", v.x, v.y, v.z);
 			return true;
 		}
 	}
@@ -137,6 +163,9 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
+	if (game->game_over) {
+		return;	
+	}
 	//player walking:
 	{
 		//combine inputs into a move:
@@ -211,7 +240,6 @@ void PlayMode::update(float elapsed) {
 			);
 			player.transform->rotation = glm::normalize(adjust * player.transform->rotation);
 		}
-
 		/*
 		glm::mat4x3 frame = camera->transform->make_local_to_parent();
 		glm::vec3 right = frame[0];
@@ -222,11 +250,53 @@ void PlayMode::update(float elapsed) {
 		*/
 	}
 
+	// Game related updates:
+	game->move_projectiles(elapsed);
+	game->check_collisions();
+
+	total_elapsed += static_cast<double>(elapsed);
+	shoot_elapsed += elapsed;
+
+	if (static_cast<uint32_t>(total_elapsed) % Game::LAUNCH_TARGET_TIME) {
+		if (can_launch_target) {
+			game->launch_new_target();
+			can_launch_target = false;
+		}
+	}
+	else {
+		can_launch_target = true;
+	}
+	if (static_cast<uint32_t>(total_elapsed) % Game::MOVE_BONUS_TIME) {
+		if (can_move_bonus) {
+			game->move_bonus_position();	
+			can_move_bonus = false;
+		}
+	}
+	else {
+		can_move_bonus = true;	
+	}
+
+	if (static_cast<uint32_t>(total_elapsed) % Game::CHECK_PROJECTILES_TIMER) {
+		if (can_check_projectiles) {
+			game->remove_long_lived_projectiles();
+			can_check_projectiles = false;
+		}
+	}	
+	else {
+		can_check_projectiles = true;	
+	}
+
+	game->remove_finished_sounds();
+
 	//reset button press counters:
 	left.downs = 0;
 	right.downs = 0;
 	up.downs = 0;
 	down.downs = 0;
+
+	if (total_elapsed > Game::GAME_LENGTH) {
+		game->game_over = true;	
+	}
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -262,7 +332,27 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	}
 	*/
 
-	{ //use DrawLines to overlay some text:
+	if (game->game_over)  {
+		glDisable(GL_DEPTH_TEST);
+		float aspect = float(drawable_size.x) / float(drawable_size.y);
+		DrawLines lines(glm::mat4(
+			1.0f / aspect, 0.0f, 0.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f,
+			0.0f, 0.0f, 0.0f, 1.0f
+		));
+
+		constexpr float text_size = 0.15f;
+		// calculated from pure experimentation since it doesn't make sense 
+		// logically
+		constexpr float text_size_divisor_for_mid = 5.3f;
+		std::string text = "Final Score: " + std::to_string(game->score); 
+		lines.draw_text(text,
+			glm::vec3(0.f - (static_cast<float>(text.length()) * text_size / text_size_divisor_for_mid), 0.f, 0.0),
+			glm::vec3(text_size, 0.0f, 0.0f), glm::vec3(0.0f, text_size, 0.0f),
+			Game::TEXT_COLOR);
+
+	} else { //use DrawLines to overlay some text:
 		glDisable(GL_DEPTH_TEST);
 		float aspect = float(drawable_size.x) / float(drawable_size.y);
 		DrawLines lines(glm::mat4(
@@ -273,15 +363,13 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
 		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+			Game::TEXT_COLOR);
+
+		
 	}
 	GL_ERRORS();
 }

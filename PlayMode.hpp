@@ -1,5 +1,6 @@
 #include "Mode.hpp"
 
+#include "Game.hpp"
 #include "Scene.hpp"
 #include "WalkMesh.hpp"
 
@@ -27,6 +28,13 @@ struct PlayMode : Mode {
 
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
+
+	Game::Game *game = nullptr;
+	double total_elapsed = 1.0;
+	float shoot_elapsed = Game::RELOAD_SPEED;
+	bool can_move_bonus = true;
+	bool can_launch_target = true;
+	bool can_check_projectiles = true;
 
 	//player info:
 	struct Player {

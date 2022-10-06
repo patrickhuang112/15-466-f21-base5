@@ -34,6 +34,7 @@ struct PlayMode : Mode {
 	float shoot_elapsed = Game::RELOAD_SPEED;
 	bool can_move_bonus = true;
 	bool can_launch_target = true;
+	bool can_play_bonus_timer = true;
 	bool can_check_projectiles = true;
 
 	//player info:

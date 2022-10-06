@@ -66,7 +66,11 @@ bool Game::check_collisions() {
         auto target_it = targets.begin();
         for (auto target : targets) {
             if (!target->remove && Projectile::colliding(rocket, target)) {
-                score += (TARGET_LIFETIME - target->elapsed);
+                float add = (TARGET_LIFETIME - target->elapsed);
+                if (in_bonus) {
+                    add += add;
+                }
+                score += add;
                 target->remove = true;
                 rocket->remove = true;
                 collision = true;
@@ -112,7 +116,6 @@ void Game::launch_new_target() {
     float z = static_cast<float>(glm::sqrt(1.f - x * x));
 
     glm::vec3 velo(x, y, z);
-    printf("x, z %f %f\n", x, z);
     velo = glm::normalize(velo) * TARGET_SPEED;
     auto target = std::make_shared<Target>(TARGET_RADIUS, TARGET_LAUNCH_POSITION, velo, get_free_target()); 
     targets.emplace_back(target);  
@@ -121,10 +124,15 @@ void Game::launch_new_target() {
 }
 
 void Game::move_bonus_position() {
-    float random_x = static_cast<float>(fmod((dis(e) * std::time(0) * dis(e) * (xmax - xmin)), (xmax-xmin))); 
-    float random_y = static_cast<float>(fmod((dis(e) * std::time(0) * dis(e) * (ymax - ymin)), (ymax-ymin)));
-    bonus_position = glm::vec3(random_x, random_y, 0.f); 
+    int xi = static_cast<int>(dis(e) * std::time(0) * dis(e)) % (xmax - xmin);
+    bonus->position = glm::vec3(float(xi) - 10.f, 0.f, 0.f); 
     bonus_sample = Sound::play(bonus_audio); 
+}
+
+void Game::play_bonus_timer() {
+    if (bonus_timer_sample == nullptr) {
+        bonus_timer_sample = Sound::play(bonus_timer_audio);  
+    } 
 }
 
 void Game::remove_long_lived_projectiles() {
@@ -167,6 +175,14 @@ void Game::remove_finished_sounds() {
     } 
     if (hit_sample != nullptr && hit_sample->stopped) {
         hit_sample = nullptr; 
+    }
+}
+
+void Game::is_in_bonus(const glm::vec3& pos) {
+    bool before = in_bonus;
+    in_bonus = glm::distance(glm::vec3(pos.x, pos.y, 0.f), bonus->position) < BONUS_RADIUS ? true : false; 
+    if (in_bonus && !before) {
+        Sound::play(entered_bonus_audio);  
     }
 }
 

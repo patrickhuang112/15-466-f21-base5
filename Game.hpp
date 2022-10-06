@@ -19,13 +19,13 @@ namespace Game {
 constexpr float ROCKET_LIFETIME = 3.f;
 constexpr float TARGET_LIFETIME = 8.f;
 constexpr float PI = 3.1415926f;
-constexpr float BONUS_RADIUS = 15.f;
 constexpr float ROCKET_RADIUS = 0.7f;
 constexpr float TARGET_RADIUS = 1.f;
 constexpr float RELOAD_SPEED = 1.f;
 constexpr float ROCKET_SPEED = 30.f;
 constexpr float TARGET_SPEED = 20.f;
 constexpr float GAME_LENGTH = 60.f;
+constexpr float BONUS_RADIUS = 1.f;
 constexpr glm::vec3 TARGET_LAUNCH_POSITION = glm::vec3(0.f, 10.f, 2.f);
 constexpr glm::vec3 DEFAULT_MODEL_POSITION = glm::vec3(0.f, 0.f, -100.f);
 const glm::u8vec4 TEXT_COLOR = glm::u8vec4(0xf4, 0x04, 0x2c, 0x00);
@@ -33,17 +33,14 @@ constexpr uint32_t MOVE_BONUS_TIME = 15;
 constexpr uint32_t LAUNCH_TARGET_TIME = 3;
 constexpr uint32_t CHECK_PROJECTILES_TIMER = 5;
 constexpr uint32_t NUM_PATHS = 2;
-constexpr const char * BONUS_MOVED_AUDIO = "sounds/player_shoot.opus";
-constexpr const char * BONUS_5SEC_AUDIO = "sounds/player_shoot.opus";
-constexpr const char * PLAYER_SHOOT_AUDIO = "sounds/player_shoot.opus";
-constexpr const char * TARGET_SHOOT_AUDIO = "sounds/target_shoot.opus";
+constexpr const char * BONUS_MOVED_AUDIO = "sounds/moved.opus";
+constexpr const char * BONUS_5SEC_AUDIO = "sounds/moving.opus";
+constexpr const char * PLAYER_SHOOT_AUDIO = "sounds/shoot.opus";
+constexpr const char * TARGET_SHOOT_AUDIO = "sounds/target.opus";
+constexpr const char * ENTERED_BONUS_AUDIO = "sounds/in_bonus.opus";
 constexpr const char * HIT_AUDIO = "sounds/hit.opus";
-constexpr const char * MISS_AUDIO = "sounds/miss.opus";
 constexpr float GRAVITY = 9.8f;
-constexpr std::array<std::pair<char, const char *>, NUM_PATHS> PATH_AUDIO = {
-    std::pair('2', "sounds/2.opus"),
-    std::pair('3', "sounds/3.opus"),
-};
+
 constexpr float TARGET_CLIP_DIST = 500.f;
 
 struct Projectile {
@@ -98,17 +95,17 @@ struct Rocket : Projectile {
 };
 
 struct Game {
-    Game(float xmin, float xmax, float ymin, float ymax, const Scene& scene) : 
-             bonus_audio(data_path(PLAYER_SHOOT_AUDIO)),
-             bonus_timer_audio(data_path(PLAYER_SHOOT_AUDIO)),
+    Game(const Scene& scene) : 
+             bonus_audio(data_path(BONUS_MOVED_AUDIO)),
+             bonus_timer_audio(data_path(BONUS_5SEC_AUDIO)),
+             entered_bonus_audio(data_path(ENTERED_BONUS_AUDIO)),
              player_shoot_audio(data_path(PLAYER_SHOOT_AUDIO)),
              target_shoot_audio(data_path(TARGET_SHOOT_AUDIO)),
              hit_audio(data_path(HIT_AUDIO)) {
         
-        this->xmin = xmin;
-        this->xmax = xmax;
-        this->ymin = ymin;
-        this->ymax = xmax;
+        // Hardcoded from model being used as platform
+        this->xmin = -10;
+        this->xmax = 10;
 
         bonus_sample = nullptr;
         bonus_timer_sample = nullptr;
@@ -118,12 +115,6 @@ struct Game {
 
 
         dis = std::uniform_real_distribution(0.f, 1.f);
-
-        // Load all audio samples
-        for (const auto& p : PATH_AUDIO) {
-            path_audio.emplace(p.first, Sound::Sample(data_path(std::string(p.second))));
-        } 
-        move_bonus_position();
 
         for (auto &transform : scene.transforms) {
             Scene::Transform *model = const_cast<Scene::Transform *>(&transform);
@@ -136,13 +127,18 @@ struct Game {
                 rocket_models.emplace_back(model);
             } 
             else if (transform.name.substr(0, 7) == "Shooter") {
-                printf("aposidfjapoisejf\n");
                 model->position = TARGET_LAUNCH_POSITION;
+            }
+            else if (transform.name.substr(0, 7) == "Bonus") {
+                bonus = model;
             } 
-        } 
+        }  
+        move_bonus_position();
+         
         rockets.clear();
         targets.clear();
         game_over = false;
+        in_bonus = false;
         score = 0;
     }
 
@@ -152,9 +148,12 @@ struct Game {
     void move_projectiles(float elapsed);
     void launch_new_target();
     void move_bonus_position();
+    void play_bonus_timer();
     void remove_long_lived_projectiles();
     void remove_finished_sounds();
+    void is_in_bonus(const glm::vec3& pos);
     bool game_over; 
+    bool in_bonus;
     float score;
     
     ~Game() = default;
@@ -167,14 +166,12 @@ struct Game {
 
         std::default_random_engine e;
         std::uniform_real_distribution<float> dis; // rage 0 - 1
-        glm::vec3 bonus_position;
-        float xmin = 0.f;
-        float xmax = 100.f;
-        float ymin = 0.f;
-        float ymax = 100.f;
-        float bonus_radius; 
+        Scene::Transform *bonus;
+        int32_t xmin;
+        int32_t xmax;
         Sound::Sample bonus_audio; 
         Sound::Sample bonus_timer_audio; 
+        Sound::Sample entered_bonus_audio;
         Sound::Sample player_shoot_audio; 
         Sound::Sample target_shoot_audio; 
         Sound::Sample hit_audio; 

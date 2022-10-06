@@ -69,7 +69,7 @@ PlayMode::PlayMode() : scene(*phonebank_scene) {
 
 	SDL_SetRelativeMouseMode(SDL_TRUE);
 
-	game = new Game::Game(0.f, 0.f, 0.f, 0.f, scene);
+	game = new Game::Game(scene);
 }
 
 PlayMode::~PlayMode() {
@@ -113,6 +113,7 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			down.pressed = false;
 			return true;
 		}
+		
 	} else if (evt.type == SDL_MOUSEBUTTONUP) {
 		if (shoot_elapsed > Game::RELOAD_SPEED) {
 			float pitch = glm::pitch(player.camera->transform->rotation);
@@ -251,6 +252,7 @@ void PlayMode::update(float elapsed) {
 	}
 
 	// Game related updates:
+	game->is_in_bonus(player.transform->position);
 	game->move_projectiles(elapsed);
 	game->check_collisions();
 
@@ -274,6 +276,16 @@ void PlayMode::update(float elapsed) {
 	}
 	else {
 		can_move_bonus = true;	
+	}
+
+	if (static_cast<uint32_t>(total_elapsed + 5.f) % Game::MOVE_BONUS_TIME) {
+		if (can_play_bonus_timer) {
+			game->play_bonus_timer();
+			can_play_bonus_timer = false;
+		}
+	}
+	else {
+		can_play_bonus_timer = true;	
 	}
 
 	if (static_cast<uint32_t>(total_elapsed) % Game::CHECK_PROJECTILES_TIMER) {
@@ -364,7 +376,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 		constexpr float H = 0.09f;
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		std::string text = "Current Score: " + std::to_string(game->score); 
+		lines.draw_text(text,
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			Game::TEXT_COLOR);
